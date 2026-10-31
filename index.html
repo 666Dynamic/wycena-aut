@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Wycena auta</title>
+  <style>
+    body { max-width: 480px; margin: 0 auto; padding: 16px; font: 16px/1.4 system-ui, sans-serif; }
+    h1 { font-size: 1.4rem; margin: 0 0 12px; }
+    label { display: block; margin-bottom: 10px; font-weight: 600; }
+    select, input { display: block; width: 100%; box-sizing: border-box; min-height: 44px; font: inherit; font-size: 16px; padding: 6px; }
+    .dwa { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    fieldset { border: 1px solid #999; margin: 0 0 12px; padding: 10px; }
+    button, .guzik { display: block; flex: 1; box-sizing: border-box; min-height: 48px; padding: 12px; font: inherit; font-weight: 600; text-align: center; }
+    .guziki { display: flex; gap: 10px; }
+    #wynik { margin-top: 16px; font-size: 1.1rem; }
+  </style>
+</head>
+<body>
+  <h1>Wycena auta</h1>
+  <form id="auto">
+    <label>Marka <select id="marka"></select></label>
+    <label>Model <select id="model"></select></label>
+    <div class="dwa">
+      <label>Paliwo
+        <select id="paliwo">
+          <option value="petrol">Benzyna</option>
+          <option value="diesel">Diesel</option>
+          <option value="hybrid">Hybryda</option>
+          <option value="plugin-hybrid">Hybryda Plug-in</option>
+          <option value="petrol-lpg">Benzyna+LPG</option>
+          <option value="petrol-cng">Benzyna+CNG</option>
+          <option value="electric">Elektryczny</option>
+          <option value="etanol">Etanol</option>
+          <option value="hidrogen">Wodór</option>
+        </select>
+      </label>
+      <label>Skrzynia
+        <select id="skrzynia">
+          <option value="manual">Manualna</option>
+          <option value="automatic">Automatyczna</option>
+        </select>
+      </label>
+    </div>
+    <div class="dwa">
+      <label>Rok <input id="rok" type="number" inputmode="numeric"></label>
+      <label>Moc (KM) <input id="moc" type="number" inputmode="numeric"></label>
+    </div>
+    <label>Przebieg (km) <input id="przebieg" type="number" inputmode="numeric"></label>
+
+    <fieldset>
+      <legend>Filtr (możesz zmienić)</legend>
+      <div class="dwa">
+        <label>Rok od <input id="rokOd" type="number" inputmode="numeric"></label>
+        <label>Rok do <input id="rokDo" type="number" inputmode="numeric"></label>
+        <label>Moc od <input id="mocOd" type="number" inputmode="numeric"></label>
+        <label>Moc do <input id="mocDo" type="number" inputmode="numeric"></label>
+      </div>
+      <label>Przebieg do <input id="przebiegDo" type="number" inputmode="numeric"></label>
+    </fieldset>
+
+    <div class="guziki">
+      <button type="submit">Wyszukaj</button>
+      <a id="otomoto" class="guzik" target="_blank" rel="noopener">Otwórz Otomoto</a>
+    </div>
+  </form>
+  <div id="wynik" role="status"></div>
+
+  <script src="catalog.js"></script>
+  <script src="filtry.js"></script>
+  <script>
+    // Adres pośrednika worker.mjs. Bez niego działa tylko Otwórz Otomoto.
+    const SZUKAJ_URL = 'https://wycena-aut.hfnvflmwxetmfpc.workers.dev/';
+
+    const $ = (id) => document.getElementById(id);
+    const zl = (kwota) => Math.round(kwota).toLocaleString('pl-PL') + ' zł';
+
+    function pokazModele() {
+      $('model').replaceChildren(new Option('Wybierz model', ''));
+      const modele = KATALOG.models[$('marka').value] || [];
+      for (const [id, nazwa] of modele) {
+        const powtorzona = modele.filter((m) => m[1] === nazwa).length > 1;
+        $('model').add(new Option(powtorzona ? nazwa + ' (' + id + ')' : nazwa, id));
+      }
+    }
+
+    function ustawFiltr() {
+      const liczba = (id) => ($(id).value === '' ? null : Number($(id).value));
+      const rok = liczba('rok'), moc = liczba('moc'), przebieg = liczba('przebieg');
+      $('rokOd').value = rok === null ? '' : rok - 2;
+      $('rokDo').value = rok === null ? '' : rok + 2;
+      $('mocOd').value = moc === null ? '' : Math.max(0, moc - 10);
+      $('mocDo').value = moc === null ? '' : moc + 10;
+      $('przebiegDo').value = przebieg === null ? '' : przebieg + 40000;
+    }
+
+    function filtry() {
+      const pola = ['marka', 'model', 'paliwo', 'skrzynia', 'rokOd', 'rokDo', 'mocOd', 'mocDo', 'przebiegDo'];
+      const wartosci = Object.fromEntries(pola.map((id) => [id, $(id).value]));
+      return pola.every((id) => wartosci[id] !== '') ? FILTRY.zbuduj(wartosci) : null;
+    }
+
+    function pokazLink() {
+      const f = filtry();
+      if (f) $('otomoto').href = FILTRY.link(f);
+      else $('otomoto').removeAttribute('href');
+    }
+
+    async function szukaj(f) {
+      if (!SZUKAJ_URL) return 'Wyszukaj nie jest jeszcze podłączone. Użyj Otwórz Otomoto.';
+      const odpowiedz = await fetch(SZUKAJ_URL, { method: 'POST', body: JSON.stringify({ filters: f }) });
+      if (!odpowiedz.ok) return 'Otomoto odmówiło (' + odpowiedz.status + '). Użyj Otwórz Otomoto.';
+      const w = FILTRY.podsumuj(await odpowiedz.json());
+      if (w.najtansza === null) return 'Ofert łącznie: ' + w.lacznie + '. Brak cen do policzenia.';
+      return 'Ofert łącznie: ' + w.lacznie + '\nNajtańsza: ' + zl(w.najtansza) + '\nŚrednia z ' + w.policzono + ': ' + zl(w.srednia)
+        + (w.pominieto ? '\nPominięto raty, leasing lub netto: ' + w.pominieto : '');
+    }
+
+    $('marka').add(new Option('Wybierz markę', ''));
+    for (const [id, nazwa] of KATALOG.makes) $('marka').add(new Option(nazwa, id));
+    pokazModele();
+    $('otomoto').addEventListener('click', (e) => {
+      if (!$('otomoto').href) { e.preventDefault(); $('wynik').textContent = 'Uzupełnij wszystkie pola.'; }
+    });
+    $('auto').addEventListener('input', (e) => {
+      if (e.target.id === 'marka') pokazModele();
+      if (['rok', 'moc', 'przebieg'].includes(e.target.id)) ustawFiltr();
+      pokazLink();
+    });
+    $('auto').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = filtry();
+      if (!f) { $('wynik').textContent = 'Uzupełnij wszystkie pola.'; return; }
+      $('wynik').textContent = 'Szukam…';
+      try {
+        $('wynik').innerText = await szukaj(f);
+      } catch (blad) {
+        $('wynik').textContent = (blad instanceof TypeError ? 'Brak połączenia.' : blad.message) + ' Użyj Otwórz Otomoto.';
+      }
+    });
+  </script>
+</body>
+</html>
