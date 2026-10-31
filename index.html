@@ -9,7 +9,7 @@
     body { max-width: 480px; margin: 0 auto; padding: 16px; font: 16px/1.4 system-ui, sans-serif; }
     h1 { font-size: 1.4rem; margin: 0 0 12px; }
     label { display: block; margin-bottom: 10px; font-weight: 600; }
-    select, input { display: block; width: 100%; box-sizing: border-box; min-height: 44px; font: inherit; font-size: 16px; padding: 6px; }
+    select, input, textarea { display: block; width: 100%; box-sizing: border-box; min-height: 44px; font: inherit; font-size: 16px; padding: 6px; }
     .dwa { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     fieldset { border: 1px solid #999; margin: 0 0 12px; padding: 10px; }
     button, .guzik { display: block; flex: 1; box-sizing: border-box; min-height: 48px; padding: 12px; font: inherit; font-weight: 600; text-align: center; }
@@ -20,11 +20,13 @@
 <body>
   <h1>Wycena auta</h1>
   <form id="auto">
+    <label>Wklej albo wpisz auto <textarea id="tekst" rows="3"></textarea></label>
     <label>Marka <select id="marka"></select></label>
     <label>Model <select id="model"></select></label>
     <div class="dwa">
       <label>Paliwo
         <select id="paliwo">
+          <option value=""></option>
           <option value="petrol">Benzyna</option>
           <option value="diesel">Diesel</option>
           <option value="hybrid">Hybryda</option>
@@ -38,6 +40,7 @@
       </label>
       <label>Skrzynia
         <select id="skrzynia">
+          <option value=""></option>
           <option value="manual">Manualna</option>
           <option value="automatic">Automatyczna</option>
         </select>
@@ -77,7 +80,7 @@
     const zl = (kwota) => Math.round(kwota).toLocaleString('pl-PL') + ' zł';
 
     function pokazModele() {
-      $('model').replaceChildren(new Option('Wybierz model', ''));
+      $('model').replaceChildren(new Option('', ''));
       const modele = KATALOG.models[$('marka').value] || [];
       for (const [id, nazwa] of modele) {
         const powtorzona = modele.filter((m) => m[1] === nazwa).length > 1;
@@ -85,20 +88,28 @@
       }
     }
 
-    function ustawFiltr() {
-      const liczba = (id) => ($(id).value === '' ? null : Number($(id).value));
-      const rok = liczba('rok'), moc = liczba('moc'), przebieg = liczba('przebieg');
-      $('rokOd').value = rok === null ? '' : rok - 2;
-      $('rokDo').value = rok === null ? '' : rok + 2;
-      $('mocOd').value = moc === null ? '' : Math.max(0, moc - 10);
-      $('mocDo').value = moc === null ? '' : moc + 10;
-      $('przebiegDo').value = przebieg === null ? '' : przebieg + 40000;
+    function ustawFiltr(id) {
+      const okna = {
+        rok: (w) => ({ rokOd: w - 2, rokDo: w + 2 }),
+        moc: (w) => ({ mocOd: Math.max(0, w - 10), mocDo: w + 10 }),
+        przebieg: (w) => ({ przebiegDo: w + 40000 }),
+      };
+      const pusty = $(id).value === '';
+      for (const [pole, wartosc] of Object.entries(okna[id](Number($(id).value)))) $(pole).value = pusty ? '' : wartosc;
     }
 
     function filtry() {
       const pola = ['marka', 'model', 'paliwo', 'skrzynia', 'rokOd', 'rokDo', 'mocOd', 'mocDo', 'przebiegDo'];
       const wartosci = Object.fromEntries(pola.map((id) => [id, $(id).value]));
-      return pola.every((id) => wartosci[id] !== '') ? FILTRY.zbuduj(wartosci) : null;
+      return wartosci.marka ? FILTRY.zbuduj(wartosci) : null;
+    }
+
+    function wczytajTekst() {
+      const auto = FILTRY.rozpoznaj($('tekst').value, KATALOG);
+      $('marka').value = auto.marka || '';
+      pokazModele();
+      for (const pole of ['model', 'paliwo', 'skrzynia', 'rok', 'moc', 'przebieg']) $(pole).value = auto[pole] || '';
+      for (const pole of ['rok', 'moc', 'przebieg']) ustawFiltr(pole);
     }
 
     function pokazLink() {
@@ -117,21 +128,23 @@
         + (w.pominieto ? '\nPominięto raty, leasing lub netto: ' + w.pominieto : '');
     }
 
-    $('marka').add(new Option('Wybierz markę', ''));
+    $('marka').add(new Option('', ''));
     for (const [id, nazwa] of KATALOG.makes) $('marka').add(new Option(nazwa, id));
     pokazModele();
     $('otomoto').addEventListener('click', (e) => {
-      if (!$('otomoto').href) { e.preventDefault(); $('wynik').textContent = 'Uzupełnij wszystkie pola.'; }
+      if (!$('otomoto').href) { e.preventDefault(); $('wynik').textContent = 'Wybierz markę.'; }
     });
     $('auto').addEventListener('input', (e) => {
+      $('wynik').textContent = '';
+      if (e.target.id === 'tekst') wczytajTekst();
       if (e.target.id === 'marka') pokazModele();
-      if (['rok', 'moc', 'przebieg'].includes(e.target.id)) ustawFiltr();
+      if (['rok', 'moc', 'przebieg'].includes(e.target.id)) ustawFiltr(e.target.id);
       pokazLink();
     });
     $('auto').addEventListener('submit', async (e) => {
       e.preventDefault();
       const f = filtry();
-      if (!f) { $('wynik').textContent = 'Uzupełnij wszystkie pola.'; return; }
+      if (!f) { $('wynik').textContent = 'Wybierz markę.'; return; }
       $('wynik').textContent = 'Szukam…';
       try {
         $('wynik').innerText = await szukaj(f);
